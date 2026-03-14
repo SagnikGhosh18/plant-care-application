@@ -61,7 +61,7 @@ export async function updateReminderSchedule(
 ): Promise<void> {
   const db = getDatabase();
   await db.runAsync(
-    'UPDATE reminders SET scheduled_at = ?, notification_id = ?, completed_at = NULL WHERE id = ?',
+    'UPDATE reminders SET scheduled_at = ?, notification_id = ? WHERE id = ?',
     [scheduledAt, notificationId, id]
   );
 }

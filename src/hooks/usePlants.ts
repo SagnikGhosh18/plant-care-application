@@ -85,7 +85,7 @@ export function usePlants() {
 
     const { reminders } = useReminderStore.getState();
     const waterReminder = reminders.find(
-      (r) => r.plant_id === plantId && r.type === 'water' && r.completed_at === null
+      (r) => r.plant_id === plantId && r.type === 'water'
     );
     if (waterReminder) {
       if (waterReminder.notification_id) {
@@ -96,8 +96,9 @@ export function usePlants() {
         { ...waterReminder, scheduled_at: nextScheduled, notification_id: null },
         updated
       );
+      await RemindersDB.markReminderComplete(waterReminder.id, timestamp);
       await RemindersDB.updateReminderSchedule(waterReminder.id, nextScheduled, newNotificationId);
-      updateReminder({ ...waterReminder, scheduled_at: nextScheduled, notification_id: newNotificationId, completed_at: null });
+      updateReminder({ ...waterReminder, completed_at: timestamp, scheduled_at: nextScheduled, notification_id: newNotificationId });
     }
   }, [plants, updatePlant, updateReminder]);
 
@@ -112,7 +113,7 @@ export function usePlants() {
 
     const { reminders } = useReminderStore.getState();
     const fertilizeReminder = reminders.find(
-      (r) => r.plant_id === plantId && r.type === 'fertilize' && r.completed_at === null
+      (r) => r.plant_id === plantId && r.type === 'fertilize'
     );
     if (fertilizeReminder) {
       if (fertilizeReminder.notification_id) {
@@ -123,8 +124,9 @@ export function usePlants() {
         { ...fertilizeReminder, scheduled_at: nextScheduled, notification_id: null },
         updated
       );
+      await RemindersDB.markReminderComplete(fertilizeReminder.id, timestamp);
       await RemindersDB.updateReminderSchedule(fertilizeReminder.id, nextScheduled, newNotificationId);
-      updateReminder({ ...fertilizeReminder, scheduled_at: nextScheduled, notification_id: newNotificationId, completed_at: null });
+      updateReminder({ ...fertilizeReminder, completed_at: timestamp, scheduled_at: nextScheduled, notification_id: newNotificationId });
     }
   }, [plants, updatePlant, updateReminder]);
 

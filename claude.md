@@ -16,15 +16,17 @@ All data is stored locally on-device. The only network dependency is the Anthrop
 
 | Layer | Choice |
 |---|---|
-| Framework | React Native via Expo (managed workflow) |
+| Framework | React Native via Expo (bare workflow — `expo run:android` / `expo run:ios`) |
 | Language | TypeScript (strict mode) |
-| Navigation | Expo Router (file-based routing) |
-| Database | expo-sqlite |
-| Notifications | expo-notifications |
-| Camera | expo-camera |
-| Image manipulation | expo-image-manipulator |
+| Navigation | Expo Router v55 (file-based routing) |
+| Database | expo-sqlite v55 |
+| Notifications | expo-notifications v55 |
+| Camera | expo-camera v55 |
+| Image manipulation | expo-image-manipulator v55 |
+| Image picker | expo-image-picker v55 |
+| Icons | @expo/vector-icons (Ionicons) |
 | AI | Anthropic Claude API (`claude-sonnet-4-20250514`) |
-| State management | Zustand |
+| State management | Zustand v5 |
 | Styling | StyleSheet (React Native built-in) — no third-party UI libraries |
 
 ---
@@ -34,23 +36,24 @@ All data is stored locally on-device. The only network dependency is the Anthrop
 ```
 app/
   (tabs)/
+    _layout.tsx         # Tab bar layout (Library / Botanist / Reminders)
     index.tsx           # Plant Library (default tab)
     botanist.tsx        # Consult Botanist chatbot
     reminders.tsx       # Reminders & Tasks
   plant/
     [id].tsx            # Plant Detail page
-  _layout.tsx           # Root layout with tab navigation
+  _layout.tsx           # Root layout — DB init, notification permissions, store bootstrap
 
 src/
   db/
-    schema.ts           # SQLite table definitions and migrations
+    schema.ts           # SQLite open + CREATE TABLE migrations (openDatabaseSync)
     plants.ts           # CRUD operations for plants table
     reminders.ts        # CRUD operations for reminders table
 
   services/
     claude.ts           # All Anthropic API calls (identification + chat)
     notifications.ts    # expo-notifications scheduling and cancellation
-    imageUtils.ts       # Image compression logic
+    imageUtils.ts       # Image compression + base64 encode + delete
 
   store/
     usePlantStore.ts    # Zustand store for plant library state
@@ -62,12 +65,12 @@ src/
     useReminders.ts     # Hook wrapping DB + store for reminder operations
 
   types/
-    plant.ts            # Plant, CareInstructions, PlantSummary types
+    plant.ts            # Plant, PlantIdentificationResult, PlantSummary types
     reminder.ts         # Reminder, ReminderType types
     chat.ts             # ChatMessage type
 
   constants/
-    prompts.ts          # Claude system prompts
+    prompts.ts          # Claude system prompts + buildBotanistSystemPrompt()
 ```
 
 ---
@@ -76,14 +79,17 @@ src/
 
 ### 1. Database layer (`src/db/`)
 - All raw SQLite operations live here. No component should import `expo-sqlite` directly.
+- Uses `openDatabaseSync` from `expo-sqlite` (v55 synchronous API).
 - Functions must be async and return typed results.
-- Run migrations on app startup in `_layout.tsx`.
+- Run migrations on app startup in `app/_layout.tsx`.
 - Use transactions for multi-step writes (e.g., adding a plant + scheduling a reminder).
 
 ### 2. Services layer (`src/services/`)
 - `claude.ts` handles all Anthropic API calls. No component should call the API directly.
 - `notifications.ts` wraps all `expo-notifications` scheduling. No component should call expo-notifications directly.
-- `imageUtils.ts` compresses images before they are saved or sent to the API. Compression target: max 1024px on the longest side, JPEG quality 70.
+- Notification triggers use `{ type: SchedulableTriggerInputTypes.DATE, date: timestamp }` — not a bare `Date` object.
+- `imageUtils.ts` compresses images before they are saved or sent to the API. Compression target: max 1024px on the longest side, JPEG quality 0.7.
+- `imageUtils.ts` imports from `expo-file-system/legacy` (not `expo-file-system`) to avoid deprecation of `getInfoAsync`.
 
 ### 3. Store layer (`src/store/`)
 - Zustand stores hold in-memory state that mirrors the DB.
@@ -97,6 +103,7 @@ src/
 ### 5. Components
 - Components are presentational where possible. Business logic lives in hooks and services.
 - No component imports from `src/db/` or calls the Claude API directly.
+- `CameraView` does not support children — overlay controls must be sibling `View`s with `position: 'absolute'` inside a common parent container.
 
 ---
 
@@ -140,6 +147,7 @@ CREATE TABLE IF NOT EXISTS reminders (
 - Model: `claude-sonnet-4-20250514`
 - API key: loaded from environment variable `EXPO_PUBLIC_ANTHROPIC_API_KEY`
 - Never hardcode the API key. Never commit it to version control.
+- Called via `fetch` directly against `https://api.anthropic.com/v1/messages`.
 
 ### Plant Identification
 - Send image as base64 with `media_type: "image/jpeg"`.
@@ -165,6 +173,7 @@ If the image does not contain a plant, return: { "error": "No plant detected" }
 - Inject the current plant's name, care data, and recent history into the system prompt when a plant context is selected.
 - Pass the full conversation history (user + assistant messages) in every API call.
 - Support optional image attachment in user messages (compressed base64).
+- Conversation history is in-memory only — cleared on app close. No persistence to SQLite.
 
 **Botanist system prompt (in `src/constants/prompts.ts`):**
 ```
@@ -196,17 +205,19 @@ Use `expo-notifications` for all local notification scheduling.
 - When a plant is added, schedule reminders based on its care data.
 - When a reminder is completed, cancel the existing notification (`notification_id`) and schedule the next one.
 - On app launch, reconcile scheduled notifications against the `reminders` table to handle any that fired while the app was closed.
+- Trigger format: `{ type: SchedulableTriggerInputTypes.DATE, date: number }` — import `SchedulableTriggerInputTypes` from `expo-notifications`.
 
 ---
 
 ## Image Handling
 
-1. Capture with `expo-camera`.
+1. Capture with `expo-camera` or pick from gallery with `expo-image-picker`.
 2. Compress immediately using `expo-image-manipulator`: resize to max 1024px, JPEG quality 0.7.
 3. Save the compressed file to `FileSystem.documentDirectory + 'plants/'`.
 4. Store only the file path in SQLite (`photo_path`).
 5. When sending to Claude API, read the file and base64-encode it.
 6. When a plant is deleted, delete the corresponding image file from disk.
+7. Import file system utilities from `expo-file-system/legacy`.
 
 ---
 
@@ -223,7 +234,7 @@ Use `expo-notifications` for all local notification scheduling.
 
 ## Environment Variables
 
-Create a `.env.local` file at the root (never commit this):
+Create a `.env.local` file at the root (never commit this — already in `.gitignore`):
 
 ```
 EXPO_PUBLIC_ANTHROPIC_API_KEY=your_key_here
@@ -240,18 +251,31 @@ const apiKey = process.env.EXPO_PUBLIC_ANTHROPIC_API_KEY;
 
 ```json
 {
-  "expo": "~51.0.0",
-  "expo-router": "~3.0.0",
-  "expo-sqlite": "~14.0.0",
-  "expo-camera": "~15.0.0",
-  "expo-image-manipulator": "~12.0.0",
-  "expo-notifications": "~0.28.0",
-  "expo-file-system": "~17.0.0",
-  "@react-native-community/netinfo": "^11.0.0",
-  "zustand": "^4.5.0",
-  "typescript": "^5.0.0"
+  "expo": "~55.0.6",
+  "expo-router": "~55.0.5",
+  "expo-sqlite": "~55.0.10",
+  "expo-camera": "~55.0.9",
+  "expo-image-manipulator": "~55.0.10",
+  "expo-image-picker": "~55.0.12",
+  "expo-notifications": "~55.0.12",
+  "expo-file-system": "~55.0.10",
+  "expo-linking": "~55.0.7",
+  "@expo/vector-icons": "^15.1.1",
+  "@react-native-community/netinfo": "11.5.2",
+  "@react-navigation/native": "^7.1.33",
+  "react-native-safe-area-context": "~5.6.2",
+  "react-native-screens": "~4.23.0",
+  "react-native-gesture-handler": "~2.30.0",
+  "react-native-reanimated": "4.2.1",
+  "react-dom": "^19.2.0",
+  "zustand": "^5.0.11",
+  "uuid": "^13.0.0",
+  "react-native-get-random-values": "^2.0.0",
+  "typescript": "~5.9.2"
 }
 ```
+
+All packages installed with `--legacy-peer-deps` due to peer dependency conflicts in the react-dom tree.
 
 ---
 
@@ -264,3 +288,8 @@ const apiKey = process.env.EXPO_PUBLIC_ANTHROPIC_API_KEY;
 - Do not hardcode the API key anywhere.
 - Do not use `expo-av` or other heavy media libraries — image-only for v1.
 - Do not introduce a backend. This is a fully local app.
+- Do not persist chatbot conversation history — it is session-only (in-memory).
+- Do not import from `expo-file-system` directly — use `expo-file-system/legacy`.
+- Do not pass a bare `Date` as a notification trigger — use `SchedulableTriggerInputTypes.DATE`.
+- Do not place children inside `CameraView` — use absolute-positioned siblings instead.
+- Do not run `npm install` without `--legacy-peer-deps`.

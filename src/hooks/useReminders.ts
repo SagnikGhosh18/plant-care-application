@@ -16,11 +16,19 @@ function msFromNow(days: number): number {
   return Date.now() + days * 24 * 60 * 60 * 1000;
 }
 
+export type ReminderHistoryEntry = {
+  id: string;
+  type: Reminder['type'];
+  status: 'completed' | 'missed' | 'upcoming';
+  date: number; // completed_at for completed, scheduled_at otherwise
+};
+
 export function useReminders() {
   const { reminders, isLoading, updateReminder } = useReminderStore();
   const { plants } = usePlantStore();
 
-  const pendingReminders = reminders.filter((r) => r.completed_at === null);
+  // All reminders are shown — completed_at = last done, scheduled_at = next due
+  const pendingReminders = reminders;
 
   const completeReminder = useCallback(
     async (reminderId: string): Promise<void> => {
@@ -57,5 +65,29 @@ export function useReminders() {
     [reminders, plants, updateReminder]
   );
 
-  return { reminders: pendingReminders, isLoading, completeReminder };
+  function getPlantHistory(plantId: string): ReminderHistoryEntry[] {
+    const now = Date.now();
+    const entries: ReminderHistoryEntry[] = [];
+    for (const r of reminders.filter((r) => r.plant_id === plantId)) {
+      if (r.completed_at !== null) {
+        entries.push({ id: `${r.id}-done`, type: r.type, status: 'completed', date: r.completed_at });
+      }
+      entries.push({
+        id: `${r.id}-next`,
+        type: r.type,
+        status: r.scheduled_at < now ? 'missed' : 'upcoming',
+        date: r.scheduled_at,
+      });
+    }
+    return entries.sort((a, b) => b.date - a.date);
+  }
+
+  function getMissedCount(plantId: string): number {
+    const now = Date.now();
+    return reminders.filter(
+      (r) => r.plant_id === plantId && r.scheduled_at < now
+    ).length;
+  }
+
+  return { reminders: pendingReminders, isLoading, completeReminder, getPlantHistory, getMissedCount };
 }

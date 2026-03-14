@@ -14,6 +14,7 @@ import { CameraView, useCameraPermissions } from 'expo-camera';
 import * as ImagePicker from 'expo-image-picker';
 import { Ionicons } from '@expo/vector-icons';
 import { usePlants } from '../../src/hooks/usePlants';
+import { useReminders } from '../../src/hooks/useReminders';
 import { useNetworkStatus } from '../../src/hooks/useNetworkStatus';
 import type { Plant } from '../../src/types/plant';
 
@@ -21,6 +22,7 @@ export default function LibraryScreen() {
   const router = useRouter();
   const isOnline = useNetworkStatus();
   const { plants, isLoading, addPlantFromCamera } = usePlants();
+  const { getMissedCount } = useReminders();
   const [cameraOpen, setCameraOpen] = useState(false);
   const [scanning, setScanning] = useState(false);
   const [permission, requestPermission] = useCameraPermissions();
@@ -128,18 +130,27 @@ export default function LibraryScreen() {
           keyExtractor={(item) => item.id}
           numColumns={2}
           contentContainerStyle={styles.grid}
-          renderItem={({ item }: { item: Plant }) => (
-            <TouchableOpacity
-              style={styles.card}
-              onPress={() => router.push(`/plant/${item.id}`)}
-            >
-              <Image source={{ uri: item.photo_path }} style={styles.cardImage} />
-              <View style={styles.cardInfo}>
-                <Text style={styles.cardName} numberOfLines={1}>{item.name}</Text>
-                <Text style={styles.cardScientific} numberOfLines={1}>{item.scientific_name}</Text>
-              </View>
-            </TouchableOpacity>
-          )}
+          renderItem={({ item }: { item: Plant }) => {
+            const missedCount = getMissedCount(item.id);
+            const hasWarning = missedCount > 3;
+            return (
+              <TouchableOpacity
+                style={styles.card}
+                onPress={() => router.push(`/plant/${item.id}`)}
+              >
+                <Image source={{ uri: item.photo_path }} style={styles.cardImage} />
+                {hasWarning && (
+                  <View style={styles.warningBadge}>
+                    <Ionicons name="warning" size={14} color="#fff" />
+                  </View>
+                )}
+                <View style={styles.cardInfo}>
+                  <Text style={styles.cardName} numberOfLines={1}>{item.name}</Text>
+                  <Text style={styles.cardScientific} numberOfLines={1}>{item.scientific_name}</Text>
+                </View>
+              </TouchableOpacity>
+            );
+          }}
         />
       )}
 
@@ -176,6 +187,17 @@ const styles = StyleSheet.create({
     shadowOffset: { width: 0, height: 2 },
   },
   cardImage: { width: '100%', height: 130 },
+  warningBadge: {
+    position: 'absolute',
+    top: 8,
+    right: 8,
+    backgroundColor: '#E67E22',
+    borderRadius: 10,
+    width: 24,
+    height: 24,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
   cardInfo: { padding: 8 },
   cardName: { fontSize: 14, fontWeight: '600', color: '#222' },
   cardScientific: { fontSize: 11, color: '#777', marginTop: 2, fontStyle: 'italic' },

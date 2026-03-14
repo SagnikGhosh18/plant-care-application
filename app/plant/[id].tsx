@@ -10,14 +10,17 @@ import {
   ActivityIndicator,
 } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
+import { Ionicons } from '@expo/vector-icons';
 import { usePlantStore } from '../../src/store/usePlantStore';
 import { usePlants } from '../../src/hooks/usePlants';
+import { useReminders } from '../../src/hooks/useReminders';
 
 export default function PlantDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const router = useRouter();
   const plant = usePlantStore((s) => s.plants.find((p) => p.id === id));
   const { markAsWatered, markAsFertilized, deletePlant } = usePlants();
+  const { getPlantHistory } = useReminders();
   const [loading, setLoading] = useState<'water' | 'fertilize' | 'delete' | null>(null);
 
   if (!plant) {
@@ -65,10 +68,7 @@ export default function PlantDetailScreen() {
     ]);
   }
 
-  function formatDate(ts: number | null): string {
-    if (!ts) return 'Never';
-    return new Date(ts).toLocaleDateString();
-  }
+  const history = getPlantHistory(plant.id);
 
   return (
     <ScrollView style={styles.container} contentContainerStyle={styles.content}>
@@ -97,8 +97,21 @@ export default function PlantDetailScreen() {
 
       <View style={styles.section}>
         <Text style={styles.sectionTitle}>Plant History</Text>
-        <InfoRow label="Last watered" value={formatDate(plant.last_watered_at)} />
-        <InfoRow label="Last fertilized" value={formatDate(plant.last_fertilized_at)} />
+        {history.length === 0 ? (
+          <Text style={styles.historyEmpty}>No history yet.</Text>
+        ) : (
+          history.map((entry) => (
+            <View key={entry.id} style={styles.historyRow}>
+              <View style={[styles.historyDot, entry.status === 'completed' && styles.historyDotDone, entry.status === 'missed' && styles.historyDotMissed]} />
+              <View style={styles.historyContent}>
+                <Text style={styles.historyLabel}>{TYPE_LABELS[entry.type]}</Text>
+                <Text style={[styles.historyStatus, entry.status === 'missed' && styles.historyStatusMissed, entry.status === 'upcoming' && styles.historyStatusUpcoming]}>
+                  {entry.status === 'completed' ? `Done on ${new Date(entry.date).toLocaleDateString()}` : entry.status === 'missed' ? `Missed — ${new Date(entry.date).toLocaleDateString()}` : `Upcoming — ${new Date(entry.date).toLocaleDateString()}`}
+                </Text>
+              </View>
+            </View>
+          ))
+        )}
       </View>
 
       <View style={styles.actions}>
@@ -141,6 +154,13 @@ export default function PlantDetailScreen() {
     </ScrollView>
   );
 }
+
+const TYPE_LABELS: Record<string, string> = {
+  water: 'Water',
+  fertilize: 'Fertilize',
+  repot: 'Repot',
+  rotate: 'Rotate',
+};
 
 function InfoRow({ label, value }: { label: string; value: string }) {
   return (
@@ -196,4 +216,14 @@ const styles = StyleSheet.create({
     borderColor: '#C0392B',
   },
   deleteButtonText: { color: '#C0392B', fontWeight: '600', fontSize: 14 },
+  historyEmpty: { fontSize: 14, color: '#aaa' },
+  historyRow: { flexDirection: 'row', alignItems: 'flex-start', marginBottom: 12 },
+  historyDot: { width: 10, height: 10, borderRadius: 5, backgroundColor: '#ccc', marginTop: 4, marginRight: 12 },
+  historyDotDone: { backgroundColor: '#40916C' },
+  historyDotMissed: { backgroundColor: '#C0392B' },
+  historyContent: { flex: 1 },
+  historyLabel: { fontSize: 14, fontWeight: '600', color: '#222' },
+  historyStatus: { fontSize: 12, color: '#888', marginTop: 2 },
+  historyStatusMissed: { color: '#C0392B' },
+  historyStatusUpcoming: { color: '#1A759F' },
 });

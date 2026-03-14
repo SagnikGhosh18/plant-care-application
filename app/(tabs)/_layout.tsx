@@ -34,6 +34,7 @@ export default function TabsLayout() {
         name="reminders"
         options={{
           title: 'Reminders',
+          headerShown: false,
           tabBarLabel: 'Reminders',
           tabBarIcon: ({ color, size }) => (
             <Ionicons name="notifications" size={size} color={color} />
